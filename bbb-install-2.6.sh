@@ -110,43 +110,56 @@ main() {
   echo "\n" > $CR_TMPFILE
 
   need_x64
+  SHORT_OPTS='hs:r:c:v:e:p:m:lxgadwjik'
+  LONG_OPTS_NO_ARGS='help,letsencrypt-manual,letsencrypt-only,greenlight,keycloak,
+  firewall,skip-system-checks,skip-apache-checks,manual-certificates'
+  LONG_OPTS_WITH_ARGS='host:,package-repository:,letsencrypt-email:,coturn:,
+  version:,package-proxy:,recordings-path:'
+  LONG_OPTS="$LONG_OPTS_NO_ARGS,$LONG_OPTS_WITH_ARGS"
+  OPTS=$(getopt -o "$SHORT_OPTS" -al "$LONG_OPTS" -n 'bbb-install' -- "$@") || exit 1
 
-  while builtin getopts "hs:r:c:v:e:p:m:lxgadwjik" opt "${@}"; do
+  eval set -- "$OPTS"
 
-    case $opt in
-      h)
+  while true; do
+    OPTARG="$2"
+
+    case "$1" in
+      -h | --help)
         usage
         exit 0
         ;;
-
-      s)
+      -s | --host)
         HOST=$OPTARG
         if [ "$HOST" == "bbb.example.com" ]; then 
           err "You must specify a valid hostname (not the hostname given in the docs)."
         fi
+        shift 2
         ;;
-      r)
+      -r | --package-repository)
         PACKAGE_REPOSITORY=$OPTARG
+        shift 2
         ;;
-      e)
+      -e | --letsencrypt-email)
         EMAIL=$OPTARG
         if [ "$EMAIL" == "info@example.com" ]; then 
           err "You must specify a valid email address (not the email in the docs)."
         fi
+        shift 2
         ;;
-      x)
+      -x | --letsencrypt-manual)
         LETS_ENCRYPT_OPTIONS="--manual --preferred-challenges dns"
+        shift
       ;;
-      c)
+      -c | --coturn)
         COTURN=$OPTARG
         check_coturn "$COTURN"
+        shift 2
         ;;
-
-      v)
+      -v | --version)
         VERSION=$OPTARG
+        shift 2
         ;;
-
-      p)
+      -p | --package-proxy)
         PROXY=$OPTARG
         if [ -n "$PROXY" ]; then
           if [[ "$PROXY" =~ : ]]; then
@@ -155,49 +168,48 @@ main() {
             echo "Acquire::http::Proxy \"http://$PROXY:3142\";"  > /etc/apt/apt.conf.d/01proxy
           fi
         fi
+        shift 2
         ;;
-
-      l)
+      -l | --letsencrypt-only)
         LETS_ENCRYPT_ONLY=true
+        shift
         ;;
-      g)
+      -g | --greenlight)
         GREENLIGHT=true
+        shift
         ;;
-      k)
+      -k | --keycloak)
         INSTALL_KC=true
+        shift
         ;;
-      a)
+      -a)
         err "Error: bbb-demo (API demos, '-a' option) were deprecated in BigBlueButton 2.6. Please use Greenlight or API MATE"
         ;;
-      m)
+      -m | --recordings-path)
         LINK_PATH=$OPTARG
+        shift 2
         ;;
-      d)
+      -d | --manual-certificates)
         PROVIDED_CERTIFICATE=true
+        shift
         ;;
-      w)
+      -w | --firewall)
         SSH_PORT=$(grep Port /etc/ssh/ssh_config | grep -v \# | sed 's/[^0-9]*//g')
         if [[ -n "$SSH_PORT" && "$SSH_PORT" != "22" ]]; then
           err "Detected sshd not listening to standard port 22 -- unable to install default UFW firewall rules.  See https://docs.bigbluebutton.org/2.2/customize.html#secure-your-system--restrict-access-to-specific-ports"
         fi
         UFW=true
+        shift
         ;;
-      j)
+      -j | --skip-system-checks)
         SKIP_MIN_SERVER_REQUIREMENTS_CHECK=true
+        shift
         ;;
-      i)
+      -i | --skip-apache-checks)
         SKIP_APACHE_INSTALLED_CHECK=true
+        shift
         ;;
-
-      :)
-        err "Missing option argument for -$OPTARG"
-        exit 1
-        ;;
-
-      \?)
-        err "Invalid option: -$OPTARG" >&2
-        usage
-        ;;
+      *) break ;;
     esac
   done
 
