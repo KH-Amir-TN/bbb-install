@@ -897,6 +897,8 @@ install_greenlight_v3(){
   #   A simple change can impact that property and therefore render the upgrading functionnality unoperationnal or impact the running system.
 
   # Configuring Greenlight v3 .env file (if already configured this will only update the BBB endpoint and secret).
+  cp -v $GL3_DIR/.env $GL3_DIR/.env.old && say "old .env file can be retrieved at $GL3_DIR/.env.old" #Backup
+
   sed -i "s|^[# \t]*BIGBLUEBUTTON_ENDPOINT=.*|BIGBLUEBUTTON_ENDPOINT=$BIGBLUEBUTTON_URL|" $GL3_DIR/.env
   sed -i "s|^[# \t]*BIGBLUEBUTTON_SECRET=.*|BIGBLUEBUTTON_SECRET=$BIGBLUEBUTTON_SECRET|"  $GL3_DIR/.env
   sed -i "s|^[# \t]*SECRET_KEY_BASE=[ \t]*$|SECRET_KEY_BASE=$SECRET_KEY_BASE|" $GL3_DIR/.env # Do not overwrite the value if not empty.
@@ -984,6 +986,19 @@ install_greenlight_v3(){
     sed -i '/X-Forwarded-Proto/s/$scheme/"https"/' $NGINX_FILES_DEST/keycloak.nginx
   fi
 
+  if [ -n "$GL_PATH" ]; then
+    cp -v $GL3_DIR/.env $GL3_DIR/.env.old && say "old .env file can be retrieved at $GL3_DIR/.env.old" #Backup
+    sed -i "s|^[# \t]*RELATIVE_URL_ROOT=.*|RELATIVE_URL_ROOT=$GL_PATH|" $GL3_DIR/.env
+  fi
+
+  local GL_RELATIVE_URL_ROOT=$(sed -ne "s/^\([ \t]*RELATIVE_URL_ROOT=\)\(.*\)$/\2/p" $GL3_DIR/.env) # Extract relative URL root path.
+  say "Deploying Greenlight on the '${GL_RELATIVE_URL_ROOT:-/}' path..."
+
+  if [ -n "$GL_RELATIVE_URL_ROOT" ]; then
+    sed -i "s|/cable|$GL_RELATIVE_URL_ROOT/cable|" $NGINX_FILES_DEST/greenlight-v3.nginx
+    sed -i "s|@bbb-fe|$GL_RELATIVE_URL_ROOT|" $NGINX_FILES_DEST/greenlight-v3.nginx
+  fi
+
   nginx -qt || err 'greenlight-v3 failed to install/update due to nginx tests failing to pass - if using the official image then please contact the maintainers.'
   nginx -qs reload && say 'greenlight-v3 was successfully configured'
 
@@ -1001,7 +1016,7 @@ install_greenlight_v3(){
   say "starting greenlight-v3..."
   docker-compose -f $GL3_DIR/docker-compose.yml up -d
   sleep 5
-  say "greenlight-v3 is installed, up to date and accessible on: https://$HOST/"
+  say "greenlight-v3 is installed, up to date and accessible on: https://$HOST${GL_RELATIVE_URL_ROOT:-/}"
   say "To create Greenlight administrator account, see: https://docs.bigbluebutton.org/greenlight_v3/gl3-install.html#creating-an-admin-account-1"
 
 
