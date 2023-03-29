@@ -176,6 +176,13 @@ main() {
         ;;
       g)
         GREENLIGHT=true
+        GL_DEFAULT_PATH=/
+
+        if [ -n "$GL_PATH"  ] && [ "$GL_PATH" != "$GL_DEFAULT_PATH" ]; then
+          if [[ ! $GL_PATH =~ ^/.*[^/]$ ]]; then
+            err "\$GL_PATH ENV is set to '$GL_PATH' which is invalid, Greenlight relative URL root path must start but not end with '/'."
+          fi
+        fi
         ;;
       k)
         INSTALL_KC=true
@@ -861,10 +868,9 @@ install_greenlight_v3(){
   # Configuring Greenlight v3 docker-compose.yml (if configured no side effect will happen).
   sed -i "s|^\([ \t-]*POSTGRES_PASSWORD\)\(=[ \t]*\)$|\1=$(openssl rand -hex 24)|g" $GL3_DIR/docker-compose.yml # Do not overwrite the value if not empty.
 
-  
   local PGUSER=postgres # Postgres db user to be used by greenlight-v3.
   local PGTXADDR=postgres:5432 # Postgres DB transport address (pair of (@ip:@port)).
-  local RSTXADDR=redis:6379
+  local RSTXADDR=redis:6379 # Redis DB transport address (pair of (@ip:@port)).
   local PGPASSWORD=$(sed -ne "s/^\([ \t-]*POSTGRES_PASSWORD=\)\(.*\)$/\2/p" $GL3_DIR/docker-compose.yml) # Extract generated Postgres password.
 
   if [ -z "$PGPASSWORD" ]; then
@@ -986,17 +992,24 @@ install_greenlight_v3(){
     sed -i '/X-Forwarded-Proto/s/$scheme/"https"/' $NGINX_FILES_DEST/keycloak.nginx
   fi
 
+  # Update .env file catching new configurations:
+  if ! grep -q 'RELATIVE_URL_ROOT=' $GL3_DIR/.env; then
+      cat <<HERE >> $GL3_DIR/.env
+#RELATIVE_URL_ROOT=/gl
+
+HERE
+  fi
+
   if [ -n "$GL_PATH" ]; then
-    cp -v $GL3_DIR/.env $GL3_DIR/.env.old && say "old .env file can be retrieved at $GL3_DIR/.env.old" #Backup
     sed -i "s|^[# \t]*RELATIVE_URL_ROOT=.*|RELATIVE_URL_ROOT=$GL_PATH|" $GL3_DIR/.env
   fi
 
   local GL_RELATIVE_URL_ROOT=$(sed -ne "s/^\([ \t]*RELATIVE_URL_ROOT=\)\(.*\)$/\2/p" $GL3_DIR/.env) # Extract relative URL root path.
-  say "Deploying Greenlight on the '${GL_RELATIVE_URL_ROOT:-/}' path..."
+  say "Deploying Greenlight on the '${GL_RELATIVE_URL_ROOT:-$GL_DEFAULT_PATH}' path..."
 
-  if [ -n "$GL_RELATIVE_URL_ROOT" ]; then
-    sed -i "s|/cable|$GL_RELATIVE_URL_ROOT/cable|" $NGINX_FILES_DEST/greenlight-v3.nginx
-    sed -i "s|@bbb-fe|$GL_RELATIVE_URL_ROOT|" $NGINX_FILES_DEST/greenlight-v3.nginx
+  if [ -n "$GL_RELATIVE_URL_ROOT" ] && [ "$GL_RELATIVE_URL_ROOT" != "$GL_DEFAULT_PATH" ]; then
+    sed -i "s|^\([ \t]*location\)[ \t]*\(.*/cable\)[ \t]*\({\)$|\1 $GL_RELATIVE_URL_ROOT/cable \3|" $NGINX_FILES_DEST/greenlight-v3.nginx
+    sed -i "s|^\([ \t]*location\)[ \t]*\(@bbb-fe\)[ \t]*\({\)$|\1 $GL_RELATIVE_URL_ROOT \3|" $NGINX_FILES_DEST/greenlight-v3.nginx
   fi
 
   nginx -qt || err 'greenlight-v3 failed to install/update due to nginx tests failing to pass - if using the official image then please contact the maintainers.'
@@ -1016,8 +1029,8 @@ install_greenlight_v3(){
   say "starting greenlight-v3..."
   docker-compose -f $GL3_DIR/docker-compose.yml up -d
   sleep 5
-  say "greenlight-v3 is installed, up to date and accessible on: https://$HOST${GL_RELATIVE_URL_ROOT:-/}"
-  say "To create Greenlight administrator account, see: https://docs.bigbluebutton.org/greenlight_v3/gl3-install.html#creating-an-admin-account-1"
+  say "greenlight-v3 is now installed and accessible on: https://$HOST${GL_RELATIVE_URL_ROOT:-$GL_DEFAULT_PATH}"
+  say "To create Greenlight administrator account, see: https://docs.bigbluebutton.org/greenlight/v3/install#creating-an-admin-account"
 
 
   if grep -q 'keycloak:' $GL3_DIR/docker-compose.yml; then
@@ -1028,7 +1041,7 @@ install_greenlight_v3(){
       say "   $KCPASSWORD"
     fi
 
-    say "To complete the configuration of Keycloak, see: https://docs.bigbluebutton.org/greenlight_v3/gl3-external-authentication.html#configuring-keycloak"
+    say "To complete the configuration of Keycloak, see: https://docs.bigbluebutton.org/greenlight/v3/external-authentication#configuring-keycloak"
   fi
 
   return 0;
